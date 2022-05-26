@@ -1,4 +1,6 @@
-if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) { Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs; exit }
+if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) { 
+    Write-Host "Script has to executed in an evelated shell!" -ForegroundColor Red; exit;
+}
 
 function Check-Command($cmdname) {
     return [bool](Get-Command -Name $cmdname -ErrorAction SilentlyContinue)
@@ -36,24 +38,7 @@ foreach ($uwp in $uwpRubbishApps) {
     Get-AppxPackage -Name $uwp | Remove-AppxPackage
 }
 
-# -----------------------------------------------------------------------------
-# Check for winget
-if (Check-Command -cmdname 'winget') {
-    Write-Host "Winget is already installed, skip installation."
-}
-else {
-    Write-Host "Installing winget Dependencies"
-    Add-AppxPackage -Path 'https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx'
 
-    $releases_url = 'https://api.github.com/repos/microsoft/winget-cli/releases/latest'
-
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $releases = Invoke-RestMethod -uri $releases_url
-    $latestRelease = $releases.assets | Where { $_.browser_download_url.EndsWith('msixbundle') } | Select -First 1
-
-    "Installing winget from $($latestRelease.browser_download_url)"
-    Add-AppxPackage -Path $latestRelease.browser_download_url
-}
   
 # ------------------------------------------------------------------------------
 # Manage windows optional features
@@ -62,29 +47,32 @@ Dism /online /Enable-Feature /FeatureName:VirtualMachinePlatform /All
 
 Dism /online /Disable-Feature /FeatureName:Printing-XPSServices-Features 
 
-# ------------------------------------------------------------------------------
-# Setup application to be installed by default
+# -----------------------------------------------------------------------------
+# Check for winget
+if (!(Check-Command -cmdname 'winget')) {
+    Write-Host "No winget installation found!" -ForegroundColor Red
+    Write-Host "Skipping installation of packages" -ForegroundColor Yellow
+}
+else {
+    Write-Output "Installing Apps"
 
-# 1. Make sure the Microsoft App Installer is installed:
-#    https://www.microsoft.com/en-us/p/app-installer/9nblggh4nns1
-# 2. Edit the list of apps to install.
-# 3. Run this script as administrator.
-
-Write-Output "Installing Apps"
-
-$apps = Get-Content -Path .\winget_apps.txt
-
-Foreach ($app in $apps) {
-    Write-host "Trying to install " $app
-    $listApp = winget list --exact -q $app
-    if (![String]::Join("", $listApp).Contains($app)) {
-        Write-host "Installing: " $app
-        winget install -e -h --accept-source-agreements --accept-package-agreements --id $app 
-    }
-    else {
-        Write-host "Skipping: " $app " (already installed)"
+    $apps = Get-Content -Path .\winget_apps.txt
+    
+    Foreach ($app in $apps) {
+        Write-host "Trying to install " $app
+        $listApp = winget list --exact -q $app
+        if (![String]::Join("", $listApp).Contains($app)) {
+            Write-host "Installing: " $app
+            winget install -e -h --accept-source-agreements --accept-package-agreements --id $app 
+        }
+        else {
+            Write-host "Skipping: " $app " (already installed)"
+        }
     }
 }
+
+
+
 
 # ------------------------------------------------------------------------------
 # Setup shell environment
@@ -136,12 +124,6 @@ function Install-Font {
     }
 }
 
-# Run this as a Computer Startup script to allow installing fonts from C:\InstallFont\
-# Based on http://www.edugeek.net/forums/windows-7/123187-installation-fonts-without-admin-rights-2.html
-# Run this as a Computer Startup Script in Group Policy
-
-# Full details on my website - https://mediarealm.com.au/articles/windows-font-install-no-password-powershell/
-
 $FontItem = Get-Item -Path $ExtractPath
 $FontList = Get-ChildItem -Path "$FontItem\*" -Include ('*.fon', '*.otf', '*.ttc', '*.ttf')
   
@@ -151,7 +133,5 @@ Remove-Item -Recurse -Force -Path $ExtractPath
 
 Install-Module posh-git -Scope CurrentUser
 
- # Copy Powershell profile to destination
-Copy-Item -Path ./../dotfiles/Microsoft.PowerShell_profile.ps1 -Destination $PSHOME\Microsoft.PowerShell_profile.ps1
-
-&.\vscode_extensions.ps1
+# Copy Powershell profile to destination
+Copy-Item -Path ./../dotfiles/profile.ps1 -Destination $PSHOME\Microsoft.PowerShell_profile.ps1
