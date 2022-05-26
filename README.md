@@ -1,2 +1,4 @@
 # Environment
-Scripts and tools for setting up environments for myself.
+This repository contains any information and scripts to set up common environments.
+
+
